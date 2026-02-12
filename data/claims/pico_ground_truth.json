@@ -1,0 +1,272 @@
+[
+  {
+    "claim": "Intermittent fasting reverses Type 2 diabetes",
+    "pico": {
+      "population": "patients with Type 2 diabetes",
+      "intervention": "intermittent fasting",
+      "comparison": null,
+      "outcome": "reversal of Type 2 diabetes"
+    }
+  },
+  {
+    "claim": "Vitamin D prevents COVID-19 infection",
+    "pico": {
+      "population": "general population",
+      "intervention": "vitamin D",
+      "comparison": null,
+      "outcome": "prevention of COVID-19 infection"
+    }
+  },
+  {
+    "claim": "Metformin reduces cancer risk in diabetic patients",
+    "pico": {
+      "population": "diabetic patients",
+      "intervention": "metformin",
+      "comparison": null,
+      "outcome": "reduced cancer risk"
+    }
+  },
+  {
+    "claim": "Turmeric is as effective as ibuprofen for arthritis pain",
+    "pico": {
+      "population": "patients with arthritis",
+      "intervention": "turmeric",
+      "comparison": "ibuprofen",
+      "outcome": "arthritis pain relief"
+    }
+  },
+  {
+    "claim": "Drinking 8 glasses of water a day prevents kidney stones",
+    "pico": {
+      "population": "general population",
+      "intervention": "drinking 8 glasses of water a day",
+      "comparison": null,
+      "outcome": "prevention of kidney stones"
+    }
+  },
+  {
+    "claim": "Aspirin interacts with warfarin and increases bleeding risk",
+    "pico": {
+      "population": "patients taking warfarin",
+      "intervention": "aspirin",
+      "comparison": null,
+      "outcome": "increased bleeding risk"
+    }
+  },
+  {
+    "claim": "Patients with hypertension should take ACE inhibitors as first-line treatment",
+    "pico": {
+      "population": "patients with hypertension",
+      "intervention": "ACE inhibitors",
+      "comparison": null,
+      "outcome": "first-line treatment"
+    }
+  },
+  {
+    "claim": "Omega-3 supplements reduce triglycerides by 30%",
+    "pico": {
+      "population": "general population",
+      "intervention": "omega-3 supplements",
+      "comparison": null,
+      "outcome": "30% reduction in triglycerides"
+    }
+  },
+  {
+    "claim": "Statins reduce the risk of heart attack by 25-35%",
+    "pico": {
+      "population": "patients at risk of heart attack",
+      "intervention": "statins",
+      "comparison": null,
+      "outcome": "25-35% reduction in heart attack risk"
+    }
+  },
+  {
+    "claim": "Exercise is more effective than medication for mild depression",
+    "pico": {
+      "population": "patients with mild depression",
+      "intervention": "exercise",
+      "comparison": "medication",
+      "outcome": "depression improvement"
+    }
+  },
+  {
+    "claim": "Probiotics prevent antibiotic-associated diarrhea in children",
+    "pico": {
+      "population": "children taking antibiotics",
+      "intervention": "probiotics",
+      "comparison": null,
+      "outcome": "prevention of diarrhea"
+    }
+  },
+  {
+    "claim": "Mediterranean diet reduces cardiovascular mortality by 30%",
+    "pico": {
+      "population": "general population",
+      "intervention": "Mediterranean diet",
+      "comparison": null,
+      "outcome": "30% reduction in cardiovascular mortality"
+    }
+  },
+  {
+    "claim": "Zinc supplementation shortens the duration of the common cold",
+    "pico": {
+      "population": "patients with the common cold",
+      "intervention": "zinc supplementation",
+      "comparison": null,
+      "outcome": "shorter cold duration"
+    }
+  },
+  {
+    "claim": "SSRIs are more effective than CBT for severe anxiety",
+    "pico": {
+      "population": "patients with severe anxiety",
+      "intervention": "SSRIs",
+      "comparison": "CBT",
+      "outcome": "anxiety reduction"
+    }
+  },
+  {
+    "claim": "Breastfeeding reduces the risk of childhood obesity",
+    "pico": {
+      "population": "children",
+      "intervention": "breastfeeding",
+      "comparison": "formula feeding",
+      "outcome": "reduced childhood obesity risk"
+    }
+  },
+  {
+    "claim": "Glucosamine supplements improve joint pain in osteoarthritis",
+    "pico": {
+      "population": "patients with osteoarthritis",
+      "intervention": "glucosamine supplements",
+      "comparison": null,
+      "outcome": "improved joint pain"
+    }
+  },
+  {
+    "claim": "Melatonin is safe and effective for insomnia in elderly patients",
+    "pico": {
+      "population": "elderly patients with insomnia",
+      "intervention": "melatonin",
+      "comparison": null,
+      "outcome": "improved sleep"
+    }
+  },
+  {
+    "claim": "HPV vaccination prevents cervical cancer in women aged 9-26",
+    "pico": {
+      "population": "women aged 9-26",
+      "intervention": "HPV vaccination",
+      "comparison": null,
+      "outcome": "prevention of cervical cancer"
+    }
+  },
+  {
+    "claim": "Low-dose aspirin prevents colorectal cancer",
+    "pico": {
+      "population": "general population",
+      "intervention": "low-dose aspirin",
+      "comparison": null,
+      "outcome": "prevention of colorectal cancer"
+    }
+  },
+  {
+    "claim": "Creatine supplementation increases muscle strength in older adults",
+    "pico": {
+      "population": "older adults",
+      "intervention": "creatine supplementation",
+      "comparison": null,
+      "outcome": "increased muscle strength"
+    }
+  },
+  {
+    "claim": "Cognitive behavioral therapy is as effective as antidepressants for moderate depression",
+    "pico": {
+      "population": "patients with moderate depression",
+      "intervention": "cognitive behavioral therapy",
+      "comparison": "antidepressants",
+      "outcome": "depression treatment effectiveness"
+    }
+  },
+  {
+    "claim": "Green tea consumption lowers LDL cholesterol",
+    "pico": {
+      "population": "general population",
+      "intervention": "green tea consumption",
+      "comparison": null,
+      "outcome": "lower LDL cholesterol"
+    }
+  },
+  {
+    "claim": "Flu vaccination reduces hospitalization in patients over 65",
+    "pico": {
+      "population": "patients over 65",
+      "intervention": "flu vaccination",
+      "comparison": null,
+      "outcome": "reduced hospitalization"
+    }
+  },
+  {
+    "claim": "Magnesium supplementation prevents migraine headaches",
+    "pico": {
+      "population": "migraine sufferers",
+      "intervention": "magnesium supplementation",
+      "comparison": null,
+      "outcome": "prevention of migraine headaches"
+    }
+  },
+  {
+    "claim": "Ibuprofen is safer than acetaminophen for liver disease patients",
+    "pico": {
+      "population": "patients with liver disease",
+      "intervention": "ibuprofen",
+      "comparison": "acetaminophen",
+      "outcome": "better safety profile"
+    }
+  },
+  {
+    "claim": "Daily walking for 30 minutes reduces blood pressure in hypertensive adults",
+    "pico": {
+      "population": "hypertensive adults",
+      "intervention": "daily walking for 30 minutes",
+      "comparison": null,
+      "outcome": "reduced blood pressure"
+    }
+  },
+  {
+    "claim": "Acupuncture relieves chronic lower back pain",
+    "pico": {
+      "population": "patients with chronic lower back pain",
+      "intervention": "acupuncture",
+      "comparison": null,
+      "outcome": "pain relief"
+    }
+  },
+  {
+    "claim": "High-dose vitamin C cures cancer",
+    "pico": {
+      "population": "cancer patients",
+      "intervention": "high-dose vitamin C",
+      "comparison": null,
+      "outcome": "cancer cure"
+    }
+  },
+  {
+    "claim": "Garlic supplements lower blood pressure more effectively than placebo",
+    "pico": {
+      "population": "patients with high blood pressure",
+      "intervention": "garlic supplements",
+      "comparison": "placebo",
+      "outcome": "lower blood pressure"
+    }
+  },
+  {
+    "claim": "Screen time before bed causes insomnia in adolescents",
+    "pico": {
+      "population": "adolescents",
+      "intervention": "screen time before bed",
+      "comparison": null,
+      "outcome": "insomnia"
+    }
+  }
+]

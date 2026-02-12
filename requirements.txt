@@ -1,0 +1,31 @@
+# Core
+langchain>=0.1.0
+langgraph>=0.0.20
+anthropic>=0.18.0
+openai>=1.0.0
+pydantic>=2.0.0
+
+# Retrieval
+sentence-transformers>=2.2.0
+faiss-cpu>=1.7.0
+biopython>=1.80
+
+# Medical NLP
+scispacy>=0.5.0
+# Run separately: pip install https://s3-us-west-2.amazonaws.com/ai2-s2-scispacy/releases/v0.5.1/en_core_sci_lg-0.5.1.tar.gz
+
+# Data
+pandas>=2.0.0
+pdfplumber>=0.9.0
+requests>=2.28.0
+
+# UI
+streamlit>=1.28.0
+
+# Observability
+langfuse>=2.0.0
+
+# Dev
+pytest>=7.0.0
+python-dotenv>=1.0.0
+ipykernel>=6.0.0
