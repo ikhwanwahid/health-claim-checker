@@ -495,13 +495,42 @@ def deep_search(papers: list, sub_claim: str) -> list[Passage]:
 
 #### Existing Benchmarks (Free, Labeled)
 
-| Dataset | Size | Domain | Labels |
-|---------|------|--------|--------|
-| **SciFact** | 1,409 | Biomedical | Supports, Refutes, NEI |
-| **PUBHEALTH** | 11,832 | Public health news | True, False, Mixture, Unproven |
-| **HealthVer** | 14,330 | COVID health claims | Supports, Refutes, NEI |
-| **COVID-Fact** | 4,086 | COVID-specific | True, False |
-| **Total** | **31,657** | | |
+| Dataset | Size | Domain | Labels | Link |
+|---------|------|--------|--------|------|
+| **SciFact** | 1,409 | Biomedical | Supports, Refutes, NEI | [github.com/allenai/scifact](https://github.com/allenai/scifact) |
+| **PUBHEALTH** | 11,832 | Public health news | True, False, Mixture, Unproven | [github.com/neemakot/Health-Fact-Checking](https://github.com/neemakot/Health-Fact-Checking) |
+| **HealthVer** | 14,330 | COVID health claims | Supports, Refutes, NEI | [github.com/sarrouti/HealthVer](https://github.com/sarrouti/HealthVer) |
+| **COVID-Fact** | 4,086 | COVID-specific | True, False | [github.com/asaakyan/covidfact](https://github.com/asaakyan/covidfact) |
+| **Total** | **31,657** | | | |
+
+#### Label Mapping: Benchmark Labels → Our Verdicts
+
+Our system produces **9 nuanced verdicts** but benchmark datasets use coarser labels (2–4 classes). To evaluate against benchmarks, we collapse our verdicts to match each dataset's label space:
+
+| Our Verdict | SciFact / HealthVer (3) | PUBHEALTH (4) | COVID-Fact (2) |
+|---|---|---|---|
+| SUPPORTED | SUPPORTS | true | true |
+| SUPPORTED_WITH_CAVEATS | SUPPORTS | mixture | true |
+| OVERSTATED | NEI | mixture | false |
+| MISLEADING | REFUTES | mixture | false |
+| PRELIMINARY | NEI | unproven | false |
+| OUTDATED | REFUTES | false | false |
+| NOT_SUPPORTED | NEI | false | false |
+| REFUTED | REFUTES | false | false |
+| DANGEROUS | REFUTES | false | false |
+
+**Key mapping decisions:**
+- **OVERSTATED → NEI** (SciFact): A claim with a kernel of truth but exaggerated doesn't cleanly fit "supports" or "refutes" — NEI is the least-wrong bucket.
+- **MISLEADING → REFUTES** (SciFact): Gives a wrong impression, closer to refutation than support.
+- **SUPPORTED_WITH_CAVEATS → mixture** (PUBHEALTH): True but needs context aligns well with PUBHEALTH's "mixture" label.
+- **PRELIMINARY → unproven** (PUBHEALTH): Direct semantic match — some evidence, too early to confirm.
+
+**Information loss:** The collapse is lossy — PUBHEALTH preserves the most nuance (4 labels capture mixture/unproven), while COVID-Fact (2 labels) loses the most. This is expected and motivates our **dual evaluation strategy**:
+
+1. **Benchmark evaluation** — Collapse verdicts, compute macro-F1 against dataset labels. Allows direct comparison with published baselines.
+2. **Nuance evaluation** — Evaluate on our 200 curated claims with full 9-level ground truth. This measures what benchmarks cannot: can the system distinguish SUPPORTED from OVERSTATED, or PRELIMINARY from NOT_SUPPORTED?
+
+The mapping utility lives in `src/evaluation/verdict_mapping.py`.
 
 #### Custom Claims (~200, Singapore Context)
 
