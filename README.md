@@ -71,136 +71,147 @@ uv run pytest tests/ -v
 uv run streamlit run app/streamlit_app.py
 ```
 
-## Architecture
+## Comparison Framework
 
-```
-Claim → Decomposer → Retrieval Planner → Evidence Retriever → VLM Extractor
-                                                    ↓
-                              Verdict Agent ← Evidence Grader ← Safety Checker
-```
+This project compares health claim verification across two dimensions:
 
-### 7 Pipeline Nodes
+### Thread 1: RAG Tiers — When does retrieval sophistication add value?
 
-| Node | Type | Purpose | Status |
-|------|------|---------|--------|
-| Claim Decomposer | Function | PICO extraction + sub-claim decomposition | Done |
-| Retrieval Planner | Agent (ReAct) | Decide retrieval methods per sub-claim | Done |
-| Evidence Retriever | Agent (ReAct) | Multi-method search with adaptive strategy | Not started |
-| VLM Extractor | Agent (ReAct) | Medical figure data extraction | Not started |
-| Evidence Grader | Agent (ReAct) | Study quality + hierarchy scoring | Not started |
-| Verdict Agent | Agent (ReAct) | Weigh evidence, synthesize verdict | Not started |
-| Safety Checker | Function | Flag dangerous claims | Not started |
+| Tier | What It Does | Embedding? |
+|------|-------------|-----------|
+| **Simple RAG** | Embed vaccine articles → vector search → LLM verdict | Yes (static corpus) |
+| **Advanced RAG** | PICO query reformulation → Multi-source API → Cross-encoder rerank → LLM verdict | Minimal (reranker only) |
+| **Agentic RAG** | ReAct agent → API discovery → rerank → deep search → VLM → grading → verdict | Yes (ephemeral, targeted) |
 
-### Multi-Method Retrieval
+### Thread 2: Agent Architectures — Does the framework matter?
 
-| Method | What it does | Status |
-|--------|-------------|--------|
-| PubMed API | Search biomedical literature | Done |
-| Semantic Scholar | Academic paper search with citations | Done |
-| Cochrane API | Systematic review search | Done |
-| ClinicalTrials.gov | Registered trial search | Done |
-| OpenFDA / RxNorm | Drug labels and interactions | Done |
-| Cross-encoder | Re-rank abstracts by relevance | Not started |
-| Deep search | PubMedBERT full-text chunk embedding | Not started |
-| Guideline store | Pre-indexed clinical guideline vector DB | Not started |
+Same pipeline implemented on multiple platforms. Function pipeline included as no-agent baseline.
+
+| Platform | Style |
+|----------|-------|
+| **LangGraph** | Structured state graph, typed state, conditional routing |
+| **Alt Framework** | Team picks 1–2 alternatives (CrewAI / AutoGen / smolagents / PydanticAI) |
+| **Function Pipeline** | Plain Python functions, no agent reasoning |
+
+### 6 System Variants
+
+| # | System | RAG Tier | Agent Arch | Purpose |
+|---|--------|----------|-----------|---------|
+| S1 | No retrieval | None | None | LLM knowledge baseline |
+| S2 | Simple RAG | Simple | None | Naive RAG baseline |
+| S3 | Advanced RAG | Advanced | Function pipeline | Multi-source retrieval without agents |
+| S4 | Multi-Agent (LangGraph) | Advanced | LangGraph | Agent orchestration value |
+| S5 | Multi-Agent (Alt Platform) | Advanced | Alt framework | Platform comparison |
+| S6 | Full Agentic RAG | Agentic | LangGraph | Full system with deep search + VLM |
+
+**Key comparisons:** S1→S2 (retrieval value), S2→S3 (advanced retrieval value), S3→S4 (agent value), S4→S5 (platform comparison), S4→S6 (agentic RAG value).
+
+Each variant exposes `verify_claim(claim) → FactCheckResult` — the evaluation framework runs any variant interchangeably. See [`systems/README.md`](systems/README.md) for the shared output contract and [`systems/s4_langgraph/README.md`](systems/s4_langgraph/README.md) for the S4/S6 pipeline architecture.
 
 ## Project Structure
 
 ```
 health-claim-checker/
-├── src/
-│   ├── config.py                  # Settings, API keys, model configs
-│   ├── agents/                    # ReAct agents (LLM + tools + reasoning loop)
-│   │   ├── retrieval_planner.py   #   Done — decide method per sub-claim
-│   │   ├── evidence_retriever.py  #   Stub
-│   │   ├── vlm_extractor.py       #   Stub
-│   │   ├── evidence_grader.py     #   Stub
-│   │   └── verdict_agent.py       #   Stub
-│   ├── functions/                 # Single-pass nodes (no reasoning loop)
-│   │   ├── decomposer.py          #   Done — PICO + sub-claims
-│   │   └── safety_checker.py      #   Stub
-│   ├── graph/
-│   │   ├── state.py               #   Done — FactCheckState, SubClaim, Evidence, etc.
-│   │   └── workflow.py            #   Done — LangGraph orchestration (7 nodes wired)
+├── src/                               # SHARED LIBRARY — all variants import from here
+│   ├── config.py                      #   Settings, API keys, model configs
+│   ├── models.py                      #   Done — FactCheckState, SubClaim, Evidence, etc.
+│   ├── functions/                     #   Single-pass nodes (no reasoning loop)
+│   │   ├── decomposer.py             #   Done — PICO + sub-claims
+│   │   └── safety_checker.py         #   Stub
 │   ├── retrieval/
-│   │   ├── pubmed_client.py       #   Done
-│   │   ├── semantic_scholar.py    #   Done
-│   │   ├── cochrane_client.py     #   Done
-│   │   ├── clinical_trials.py     #   Done
-│   │   ├── drugbank_client.py     #   Done
-│   │   ├── cross_encoder.py       #   Not started
-│   │   ├── deep_search.py         #   Not started
-│   │   ├── guideline_store.py     #   Not started
-│   │   └── trust_ranker.py        #   Not started
+│   │   ├── pubmed_client.py           #   Done
+│   │   ├── semantic_scholar.py        #   Done
+│   │   ├── cochrane_client.py         #   Done
+│   │   ├── clinical_trials.py         #   Done
+│   │   ├── drugbank_client.py         #   Done
+│   │   ├── cross_encoder.py           #   Done — re-rank abstracts by relevance
+│   │   ├── deep_search.py             #   Not started
+│   │   ├── guideline_store.py         #   Not started
+│   │   └── trust_ranker.py            #   Not started
 │   ├── medical_nlp/
-│   │   ├── medical_ner.py         #   Done — scispaCy entity extraction
-│   │   ├── pico_extractor.py      #   Done — LLM + rule-based
-│   │   └── mesh_mapper.py         #   Done — MeSH vocabulary mapping
-│   └── evaluation/                #   Not started (all 8 eval modules)
+│   │   ├── medical_ner.py             #   Done — scispaCy entity extraction
+│   │   ├── pico_extractor.py          #   Done — LLM + rule-based
+│   │   └── mesh_mapper.py             #   Done — MeSH vocabulary mapping
+│   └── evaluation/                    #   Not started (all 8 eval modules)
+│
+├── systems/                           # VARIANT IMPLEMENTATIONS — symmetric, independent
+│   ├── README.md                      #   Shared output contract
+│   ├── s1_no_retrieval/               #   S1: LLM-only baseline — stub
+│   ├── s2_simple_rag/                 #   S2: Static corpus + vector search — stub
+│   ├── s3_advanced_rag/               #   S3: Function pipeline — stub
+│   ├── s4_langgraph/                  #   S4 + S6: LangGraph multi-agent (config-driven)
+│   │   ├── agents/                    #   ReAct agents (retrieval_planner done, rest stubs)
+│   │   ├── workflow.py                #   Done — LangGraph orchestration (7 nodes wired)
+│   │   └── system.py                  #   verify_claim() entry point
+│   └── s5_alt_platform/               #   S5: Alternative agent framework — stub
+│
 ├── app/
-│   └── streamlit_app.py           #   Scaffolded — UI layout done, pipeline integration pending
+│   └── streamlit_app.py               #   Scaffolded — UI layout done, pipeline integration pending
 ├── notebooks/
-│   ├── 01_api_exploration.ipynb   #   Done — tests all retrieval APIs + medical NLP
-│   └── 02_retrieval_comparison.ipynb  # Done — retrieval planner + PICO evaluation (30 claims, 3 metrics)
+│   ├── 01_api_exploration.ipynb       #   Done — tests all retrieval APIs + medical NLP
+│   └── 02_retrieval_comparison.ipynb  #   Done — retrieval planner + PICO evaluation (30 claims, 3 metrics)
 ├── tests/
-│   └── test_agents/
-│       └── test_retrieval_planner.py  # Done — 44 tests
+│   ├── test_agents/
+│   │   └── test_retrieval_planner.py  #   Done — 44 tests
+│   └── test_retrieval/
+│       └── test_cross_encoder.py      #   Done — 17 tests
 ├── data/
-│   ├── benchmarks/                #   Placeholder dirs (download script scaffolded)
-│   ├── guidelines/                #   Empty dirs (who/, nih/, moh_singapore/)
+│   ├── benchmarks/                    #   Placeholder dirs (download script scaffolded)
+│   ├── guidelines/                    #   Empty dirs (who/, nih/, moh_singapore/)
 │   ├── claims/
-│   │   └── pico_ground_truth.json #   Done — 30 hand-labeled claims for PICO eval
-│   └── figures/                   #   Not started
+│   │   └── pico_ground_truth.json     #   Done — 30 hand-labeled claims for PICO eval
+│   └── figures/                       #   Not started
 └── scripts/
-    └── download_benchmarks.py     #   Scaffolded — creates dirs, no actual downloads
+    └── download_benchmarks.py         #   Scaffolded — creates dirs, no actual downloads
 ```
 
 ## What's Done
 
-### Pipeline Nodes
-- [x] **Claim Decomposer** — scispaCy NER, PICO extraction (LLM + rule-based), sub-claim decomposition
-- [x] **Retrieval Planner** — ReAct agent with 3 tools, rule-based fallback, validated against 8 test claims with discrimination checks (4/4 passing)
+### Shared Infrastructure
+- [x] **Data models** — `src/models.py` (FactCheckState, SubClaim, Evidence, AgentTrace, ToolCall)
+- [x] **Config** — env-based API key loading
+- [x] **Streamlit app** — scaffolded multi-tab UI
 
-### Retrieval Clients
+### Retrieval Clients (`src/retrieval/`)
 - [x] PubMed E-utilities (search, fetch, PICO query builder)
 - [x] Semantic Scholar (search, paper fetch, citations, TLDRs)
 - [x] Cochrane (systematic review search via PubMed + S2)
 - [x] ClinicalTrials.gov (search, filter by status/phase/type)
 - [x] OpenFDA + RxNorm (drug labels, interactions)
+- [x] Cross-encoder re-ranker (ms-marco-MiniLM, sigmoid normalization, graceful fallback)
 
-### Medical NLP
+### Medical NLP (`src/medical_nlp/`)
 - [x] Entity extraction (scispaCy with classification heuristics)
 - [x] PICO extraction (dual-mode: LLM + rule-based, comparison hallucination fix applied)
 - [x] PICO evaluation (30 hand-labeled claims, 3 metrics: Jaccard, Token F1, LLM Judge)
 - [x] MeSH vocabulary mapping (NCBI E-utilities)
 
-### Infrastructure
-- [x] LangGraph state definitions (FactCheckState, SubClaim, Evidence, AgentTrace, ToolCall)
-- [x] Workflow graph (all 7 nodes wired, compiles)
-- [x] Config with env-based API key loading
-- [x] Streamlit app scaffolding (multi-tab UI)
+### System Variants
+- [x] **S4/S6 LangGraph** — workflow graph wired (7 nodes compile), retrieval planner agent done. See [`systems/s4_langgraph/README.md`](systems/s4_langgraph/README.md) for pipeline details.
+- [ ] S1–S3, S5 — stubs only
 
 ### Notebooks
 - [x] `01_api_exploration` — end-to-end test of all retrieval APIs and NLP modules
 - [x] `02_retrieval_comparison` — retrieval planner testing + PICO extraction evaluation (rule-based vs LLM, 88% LLM accuracy)
 
 ### Tests
-- [x] Retrieval planner (44 tests — tools, rule-based fallback, ReAct loop, integration)
+- [x] Retrieval planner (44 tests)
+- [x] Cross-encoder re-ranker (17 tests)
 
 ## To-Do
 
-### Critical Path (blocks end-to-end pipeline)
-- [ ] **Evidence Retriever agent** — orchestrate multi-method search using the retrieval plan
-- [ ] **Cross-encoder re-ranker** — re-rank retrieved abstracts by relevance to sub-claim
-- [ ] **Evidence Grader agent** — GRADE framework quality scoring, bias assessment
-- [ ] **Verdict Agent** — synthesize evidence into 9-level verdict with confidence score
-- [ ] **Safety Checker** — flag dangerous claims (pattern matching + LLM)
-
-### Retrieval Infrastructure
+### Shared Retrieval Infrastructure
 - [ ] **Deep search** — PubMedBERT on-the-fly full-text chunk embedding (~500 chunks/claim)
 - [ ] **Guideline store** — pre-indexed vector DB for WHO/NIH/MOH guidelines
 - [ ] **Trust ranker** — evidence hierarchy scoring (guideline > systematic review > RCT > ...)
 - [ ] **Index guidelines script** — download and index guideline PDFs
+
+### System Variants
+- [ ] **S1** — LLM-only baseline implementation
+- [ ] **S2** — Simple RAG (static corpus, vector search)
+- [ ] **S3** — Advanced RAG function pipeline
+- [ ] **S4/S6** — remaining agents (evidence retriever, VLM, grader, verdict, safety). See [`systems/s4_langgraph/README.md`](systems/s4_langgraph/README.md).
+- [ ] **S5** — alternative agent framework implementation
 
 ### Evaluation
 - [ ] Decomposition eval
@@ -214,13 +225,9 @@ health-claim-checker/
 - [ ] Run baselines script
 - [ ] Run evaluation script
 
-### VLM Pipeline
-- [ ] **VLM Extractor agent** — Claude Vision for forest plots, Kaplan-Meier curves
-- [ ] Figure extraction script
-- [ ] `03_vlm_figure_extraction.ipynb`
-
 ### Polish
 - [ ] Streamlit app pipeline integration
+- [ ] `03_vlm_figure_extraction.ipynb`
 - [ ] `04_scifact_baseline.ipynb`
 - [ ] `05_results_analysis.ipynb`
 - [x] PICO ground truth data (30 hand-labeled claims)
