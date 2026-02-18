@@ -1,9 +1,9 @@
 """Main LangGraph workflow for health claim verification."""
 
 from langgraph.graph import StateGraph, END
-from src.graph.state import FactCheckState
+from src.models import FactCheckState
 from src.functions import decomposer, safety_checker
-from src.agents import (
+from systems.s4_langgraph.agents import (
     retrieval_planner,
     evidence_retriever,
     vlm_extractor,
@@ -14,9 +14,9 @@ from src.agents import (
 
 def create_workflow() -> StateGraph:
     """Create the fact-checking workflow graph."""
-    
+
     workflow = StateGraph(FactCheckState)
-    
+
     # Add nodes
     workflow.add_node("decomposer", decomposer.run_decomposer)
     workflow.add_node("retrieval_planner", retrieval_planner.run_retrieval_planner)
@@ -25,7 +25,7 @@ def create_workflow() -> StateGraph:
     workflow.add_node("evidence_grader", evidence_grader.run_evidence_grader)
     workflow.add_node("verdict_agent", verdict_agent.run_verdict_agent)
     workflow.add_node("safety_checker", safety_checker.run_safety_checker)
-    
+
     # Define edges
     workflow.set_entry_point("decomposer")
     workflow.add_edge("decomposer", "retrieval_planner")
@@ -35,21 +35,21 @@ def create_workflow() -> StateGraph:
     workflow.add_edge("evidence_grader", "verdict_agent")
     workflow.add_edge("verdict_agent", "safety_checker")
     workflow.add_edge("safety_checker", END)
-    
+
     return workflow.compile()
 
 
 async def verify_claim(claim: str) -> FactCheckState:
     """Verify a health claim.
-    
+
     Args:
         claim: The health claim to verify
-        
+
     Returns:
         Final state with verdict and evidence
     """
     workflow = create_workflow()
-    
+
     initial_state: FactCheckState = {
         "claim": claim,
         "pico": None,
@@ -68,6 +68,6 @@ async def verify_claim(claim: str) -> FactCheckState:
         "total_cost_usd": 0.0,
         "total_duration_seconds": 0.0,
     }
-    
+
     result = await workflow.ainvoke(initial_state)
     return result

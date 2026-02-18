@@ -20,6 +20,7 @@ SEMANTIC_SCHOLAR_API_KEY = os.getenv("SEMANTIC_SCHOLAR_API_KEY")
 # Model configs
 CLAUDE_MODEL = "claude-sonnet-4-20250514"
 EMBEDDING_MODEL = "pritamdeka/PubMedBERT-mnli-snli-scinli-scitail-mednli-stsb"
+CROSS_ENCODER_MODEL = "cross-encoder/ms-marco-MiniLM-L-12-v2"
 
 # Evidence hierarchy weights
 EVIDENCE_WEIGHTS = {

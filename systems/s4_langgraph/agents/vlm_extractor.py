@@ -24,7 +24,7 @@ Output (to state):
   source paper, and relevance to sub-claims
 """
 
-from src.graph.state import FactCheckState
+from src.models import FactCheckState
 
 
 async def run_vlm_extractor(state: FactCheckState) -> FactCheckState:

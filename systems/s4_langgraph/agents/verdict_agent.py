@@ -38,7 +38,7 @@ Output (to state):
 - sub_claims: updated with per-sub-claim verdicts
 """
 
-from src.graph.state import FactCheckState
+from src.models import FactCheckState
 
 
 async def run_verdict_agent(state: FactCheckState) -> FactCheckState:

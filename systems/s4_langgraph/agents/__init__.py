@@ -11,7 +11,7 @@ Modules:
     verdict_agent: Synthesizes evidence into a 9-level verdict
 """
 
-from src.agents import (
+from systems.s4_langgraph.agents import (
     retrieval_planner,
     evidence_retriever,
     vlm_extractor,

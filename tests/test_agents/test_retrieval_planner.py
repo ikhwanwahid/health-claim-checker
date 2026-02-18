@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.agents.retrieval_planner import (
+from systems.s4_langgraph.agents.retrieval_planner import (
     DEFAULT_METHODS,
     VALID_METHODS,
     _build_user_message,
@@ -19,7 +19,7 @@ from src.agents.retrieval_planner import (
     _execute_tool,
     run_retrieval_planner,
 )
-from src.graph.state import PICO, SubClaim
+from src.models import PICO, SubClaim
 
 
 # ---------------------------------------------------------------------------
@@ -450,7 +450,7 @@ class TestRunRetrievalPlanner:
         """Without API key, should use rule-based fallback."""
         state = _make_state("Vitamin D prevents cancer")
 
-        with patch("src.agents.retrieval_planner.ANTHROPIC_API_KEY", None):
+        with patch("systems.s4_langgraph.agents.retrieval_planner.ANTHROPIC_API_KEY", None):
             result = asyncio.run(run_retrieval_planner(state))
 
         assert "sc-1" in result["retrieval_plan"]
@@ -477,9 +477,9 @@ class TestRunRetrievalPlanner:
             [],
             1,
         )
-        with patch("src.agents.retrieval_planner.ANTHROPIC_API_KEY", "test-key"):
+        with patch("systems.s4_langgraph.agents.retrieval_planner.ANTHROPIC_API_KEY", "test-key"):
             with patch(
-                "src.agents.retrieval_planner._plan_with_react",
+                "systems.s4_langgraph.agents.retrieval_planner._plan_with_react",
                 return_value=mock_result,
             ):
                 result = asyncio.run(run_retrieval_planner(state))
@@ -492,9 +492,9 @@ class TestRunRetrievalPlanner:
         """If ReAct raises an exception, should fall back to rule-based."""
         state = _make_state("Aspirin treats pain")
 
-        with patch("src.agents.retrieval_planner.ANTHROPIC_API_KEY", "test-key"):
+        with patch("systems.s4_langgraph.agents.retrieval_planner.ANTHROPIC_API_KEY", "test-key"):
             with patch(
-                "src.agents.retrieval_planner._plan_with_react",
+                "systems.s4_langgraph.agents.retrieval_planner._plan_with_react",
                 side_effect=Exception("API error"),
             ):
                 result = asyncio.run(run_retrieval_planner(state))
@@ -505,7 +505,7 @@ class TestRunRetrievalPlanner:
 
     def test_cost_and_trace_accumulation(self):
         """Cost and traces should accumulate from prior state."""
-        from src.graph.state import AgentTrace
+        from src.models import AgentTrace
 
         prior_trace = AgentTrace(
             agent="decomposer",
@@ -521,7 +521,7 @@ class TestRunRetrievalPlanner:
         state["total_cost_usd"] = 0.005
         state["total_duration_seconds"] = 1.0
 
-        with patch("src.agents.retrieval_planner.ANTHROPIC_API_KEY", None):
+        with patch("systems.s4_langgraph.agents.retrieval_planner.ANTHROPIC_API_KEY", None):
             result = asyncio.run(run_retrieval_planner(state))
 
         assert len(result["agent_trace"]) == 2
@@ -533,7 +533,7 @@ class TestRunRetrievalPlanner:
         """Should handle empty sub-claims list gracefully."""
         state = _make_state("Empty test", sub_claims=[])
 
-        with patch("src.agents.retrieval_planner.ANTHROPIC_API_KEY", None):
+        with patch("systems.s4_langgraph.agents.retrieval_planner.ANTHROPIC_API_KEY", None):
             result = asyncio.run(run_retrieval_planner(state))
 
         assert result["retrieval_plan"] == {}
@@ -549,7 +549,7 @@ class TestReActLoop:
 
     def test_react_processes_tool_calls(self):
         """ReAct loop should process tool calls and build assignments."""
-        from src.agents.retrieval_planner import _plan_with_react
+        from systems.s4_langgraph.agents.retrieval_planner import _plan_with_react
 
         state = _make_state(
             "Aspirin treats headaches",
@@ -595,7 +595,7 @@ class TestReActLoop:
         mock_client = MagicMock()
         mock_client.messages.create.side_effect = [resp1, resp2, resp3]
 
-        with patch("src.agents.retrieval_planner.anthropic.Anthropic", return_value=mock_client):
+        with patch("systems.s4_langgraph.agents.retrieval_planner.anthropic.Anthropic", return_value=mock_client):
             assignments, cost, tool_calls, steps = _plan_with_react(state)
 
         assert "sc-1" in assignments
@@ -606,7 +606,7 @@ class TestReActLoop:
 
     def test_react_stops_when_all_assigned(self):
         """ReAct loop should break early when all sub-claims are assigned."""
-        from src.agents.retrieval_planner import _plan_with_react
+        from systems.s4_langgraph.agents.retrieval_planner import _plan_with_react
 
         state = _make_state("Test claim")
 
@@ -627,7 +627,7 @@ class TestReActLoop:
         mock_client = MagicMock()
         mock_client.messages.create.side_effect = [resp1]
 
-        with patch("src.agents.retrieval_planner.anthropic.Anthropic", return_value=mock_client):
+        with patch("systems.s4_langgraph.agents.retrieval_planner.anthropic.Anthropic", return_value=mock_client):
             assignments, cost, tool_calls, steps = _plan_with_react(state)
 
         assert assignments["sc-1"] == ["pubmed_api"]

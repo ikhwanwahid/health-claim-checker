@@ -81,6 +81,8 @@ A system that can:
 
 ## 3. Core Design Insight: Multi-Method Retrieval
 
+> **Which variants use what:** This section describes the multi-method retrieval philosophy underlying all systems. S2 uses Stage 3 only (embedding over a static corpus). S3/S4/S5 use Stages 1–2 (API discovery + cross-encoder reranking). S6 uses all 5 stages (API + rerank + deep search + structured lookup + VLM). S1 uses no retrieval at all.
+
 ### RAG ≠ Vector Database
 
 The common assumption is that "retrieval" means "embed everything into a vector DB and do cosine similarity search." This is wrong for health claims because:
@@ -154,7 +156,135 @@ The common assumption is that "retrieval" means "embed everything into a vector 
 
 ## 4. Architecture
 
-### Full System Flow
+### 4.1 Variant Progression
+
+Each system variant adds more components than the last — but this is a **conceptual progression, not a build dependency**. All six variants are independent and can be developed in parallel (separate branches, separate teammates). They share the same input/output contract but no code dependencies between them.
+
+```
+S1: Claim ──────────────────────────────────────────────────────────────→ LLM → Verdict
+          (no retrieval — pure parametric knowledge)
+
+S2: Claim → Embed Corpus → Vector Search ──────────────────────────────→ LLM → Verdict
+          (static corpus, no query reformulation)
+
+S3: Claim → PICO Decomposer → Multi-Source API → Cross-Encoder Rerank → LLM → Verdict
+     (fn)      (fn)             (PubMed, S2,       (fn)                   (fn)
+                                 Cochrane)
+
+S4: Claim → Decomposer → Retrieval    → API Search → Rerank → Evidence   → Verdict  → Safety   → Verdict
+              Agent       Planner Agent                         Grader Agent  Agent      Checker
+            (same retrieval methods as S3, but orchestrated by ReAct agents)
+
+S5: Same agents and tools as S4, re-implemented on team-chosen platform
+            (must conform to same input/output contract)
+
+S6: Claim → Decomposer → Retrieval    → API Search → Rerank → Deep Search → VLM     → Evidence   → Verdict  → Safety   → Verdict
+              Agent       Planner Agent                        (PubMedBERT)   Extractor  Grader Agent  Agent      Checker
+            (everything in S4 PLUS deep search, VLM, guideline store)
+```
+
+> **Shared contract:** All six variants take the same input (a health claim string) and produce the same output schema (verdict, confidence, explanation, evidence list). This ensures fair comparison across RAG tiers and agent platforms. The output schema is defined in `systems/README.md`.
+
+### 4.2 Per-Variant Architecture
+
+---
+
+**S1: No Retrieval (LLM Baseline)**
+
+```
+Claim → LLM → Verdict
+```
+
+No retrieval, no agents, no embedding. The LLM answers from parametric knowledge alone. This baseline measures what the model already "knows" — and how often that's enough (or dangerously wrong).
+
+**What to build:** A single function that sends the claim to Claude with the verdict taxonomy and output schema. Teammates only need the verdict taxonomy (Section 6) and the output schema.
+
+---
+
+**S2: Simple RAG**
+
+```
+Claim → Chunk Corpus → Embed (PubMedBERT) → Vector Search → LLM → Verdict
+```
+
+A static corpus of vaccine-related articles is pre-embedded and stored in a FAISS index. At query time, the claim is embedded and the top-k most similar chunks are retrieved as context for the LLM.
+
+- **No query reformulation** — the raw claim is used as the search query.
+- **No reranking** — cosine similarity is the only relevance signal.
+- **No agents** — a single fixed pipeline.
+- **This is the only variant that embeds a full corpus** (~5K–10K article chunks, persistent).
+
+**What to build:** Corpus curation, chunking pipeline, PubMedBERT embedding, FAISS index, single-pass LLM call with retrieved context.
+
+---
+
+**S3: Advanced RAG (Function Pipeline)**
+
+```
+Claim → PICO Decomposer (fn) → Multi-Source API Search → Cross-Encoder Rerank → LLM → Verdict
+```
+
+PICO-guided query reformulation drives multi-source API discovery. A cross-encoder reranks abstracts by relevance. No agents — all steps are deterministic functions chained sequentially.
+
+- **PICO extraction** reformulates the claim into structured queries (Population, Intervention, Comparison, Outcome).
+- **Multi-source API search:** PubMed E-utilities, Semantic Scholar, Cochrane for discovery (~30–50 candidate papers).
+- **Cross-encoder reranking** scores each abstract against the claim; top 10 selected.
+- **No embedding** — API search handles discovery, cross-encoder handles ranking.
+- **No agents** — this is the "no-agent baseline" for Thread 2 (agent architecture comparison).
+
+**What to build:** PICO extraction function, API client wrappers (PubMed, Semantic Scholar, Cochrane), cross-encoder reranking module, single-pass LLM verdict function.
+
+---
+
+**S4: Multi-Agent LangGraph**
+
+```
+Claim → Decomposer → Retrieval   → API Search → Rerank → Evidence  → Verdict → Safety  → Verdict
+          Agent       Planner Agent                        Grader Agent  Agent     Checker
+```
+
+Same retrieval methods as S3 (API discovery + cross-encoder reranking), but orchestrated by ReAct agents within a LangGraph state graph. Agents reason about which tools to call, when to stop searching, and how to weigh evidence.
+
+- **5 ReAct agents** (Decomposer, Retrieval Planner, Evidence Grader, Verdict Agent) + **2 functions** (Decomposer, Safety Checker).
+- Agents decide **which retrieval methods** to use per sub-claim (not hardcoded).
+- Agents decide **when enough evidence** has been gathered (adaptive stopping).
+- See Section 4.3 for detailed agent descriptions and the full pipeline diagram.
+
+**What to build:** LangGraph state definition, ReAct agent implementations, tool bindings, workflow graph with conditional routing.
+
+---
+
+**S5: Multi-Agent (Alt Platform)**
+
+Same agents and tools as S4, re-implemented on the team-chosen alternative platform (CrewAI, AutoGen, smolagents, or PydanticAI — team picks 1–2). Must conform to the same input/output contract for fair comparison.
+
+- Same retrieval tools, same LLM, same verdict taxonomy.
+- The only variable is the **orchestration framework**.
+- See Section 8.3 for platform options and comparison dimensions.
+
+**What to build:** Re-implement S4's agents on the chosen platform. Ensure identical tool access and output schema.
+
+---
+
+**S6: Full Agentic RAG**
+
+```
+Claim → Decomposer → Retrieval   → API Search → Rerank → Deep Search  → VLM      → Evidence  → Verdict → Safety  → Verdict
+          Agent       Planner Agent                       (PubMedBERT)   Extractor   Grader Agent  Agent     Checker
+```
+
+Everything in S4 **plus** deep search (on-the-fly PubMedBERT embedding of full-text papers), VLM figure extraction (Claude Vision on PDF figures), and pre-indexed guideline store search. This is the full system.
+
+- **Deep search** downloads full-text from PMC, chunks by section, embeds with PubMedBERT, retrieves specific passages (~200–500 ephemeral chunks per claim, discarded after).
+- **VLM extraction** reads forest plots, Kaplan-Meier curves, bar charts from paper PDFs.
+- **Guideline store** searches a pre-indexed vector DB of WHO/NIH/MOH guidelines (~18K persistent chunks).
+- See Section 4.3 for the detailed 7-node pipeline diagram.
+
+**What to build:** Deep search module (PMC download + chunking + PubMedBERT), VLM extractor agent, guideline indexing pipeline, integration into the S4 LangGraph workflow.
+
+### 4.3 Full Pipeline Detail (S4/S6)
+
+> This section details the full multi-agent pipeline used by S4 and S6. **S6 includes all components; S4 uses the same agents but without deep search (3c) and VLM (node 4).** Refer to Section 4.2 for the simpler variants (S1–S3).
 
 ```
 Health Claim Input
@@ -248,7 +378,7 @@ Health Claim Input
 │                           │                                  │
 │                           ▼                                  │
 │   ┌──────────────────────────────────────────────────────┐  │
-│   │  3c. DEEP SEARCH (Embedding — small, on-the-fly)      │  │
+│   │  3c. DEEP SEARCH (S6 only — Embedding, on-the-fly)    │  │
 │   │                                                        │  │
 │   │  For papers needing specific passage retrieval:        │  │
 │   │    1. Download full text from PMC                      │  │
@@ -275,7 +405,7 @@ Health Claim Input
                              │
                              ▼
 ┌────────────────────────────────────────────┐
-│   4. VLM EXTRACTOR                          │
+│   4. VLM EXTRACTOR (S6 only)               │
 │                                              │
 │   For papers with relevant figures:          │
 │   • Render PDF pages containing figures      │
@@ -360,14 +490,14 @@ Health Claim Input
 | 1 | **Claim Decomposer** | Function | Claude Sonnet | PICO extraction, sub-claim generation. Fixed steps — no reasoning loop needed. |
 | 2 | **Retrieval Planner** | Agent (ReAct) | Claude Sonnet | Reasons about which retrieval methods to use per sub-claim. Uses tools to inspect entities, check claim type, and plan strategy. |
 | 3 | **Evidence Retriever** | Agent (ReAct) | APIs + PubMedBERT | Searches for evidence using multiple tools (PubMed, S2, ClinicalTrials.gov, Cochrane, DrugBank). Reasons about whether enough evidence is found and adapts search strategy. |
-| 4 | **VLM Extractor** | Agent (ReAct) | Claude Vision | Reasons about figure type (forest plot, Kaplan-Meier, bar chart), selects extraction strategy accordingly, and cross-checks figure data against abstract claims. |
+| 4 | **VLM Extractor** | Agent (ReAct) | Claude Vision | S6 only. Reasons about figure type (forest plot, Kaplan-Meier, bar chart), selects extraction strategy accordingly, and cross-checks figure data against abstract claims. |
 | 5 | **Evidence Grader** | Agent (ReAct) | Claude Sonnet | Reasons about study quality — assesses design, sample size, bias indicators, funding conflicts. Compares contradicting evidence and explains discrepancies. |
 | 6 | **Verdict Agent** | Agent (ReAct) | Claude Sonnet | Weighs evidence using hierarchy, compares claim language to evidence strength, synthesizes sub-claim verdicts into overall verdict with explanation. |
 | 7 | **Safety Checker** | Function | Claude Sonnet | Pattern matching for dangerous claims. Fixed rules — no reasoning loop needed. |
 
 **Architecture note:** 5 of 7 nodes are LangGraph ReAct agents (LLM + tools + reasoning loop). The Decomposer and Safety Checker remain fixed functions because their logic is deterministic. Each agent decides which tools to call, when to call them, and when it has enough information — similar to AWS Bedrock Agents or Strands, but orchestrated within LangGraph's state graph.
 
-### New Agent: Retrieval Planner
+### Retrieval Planner Detail
 
 This is a key addition — instead of blindly running every retrieval method, the agent **plans** which methods to use per sub-claim:
 
@@ -377,26 +507,26 @@ def plan_retrieval(sub_claims: list, entities: dict) -> list[RetrievalPlan]:
     plans = []
     for claim in sub_claims:
         plan = RetrievalPlan(claim=claim)
-        
+
         # Does this need a drug lookup?
         if entities.get("drug"):
             plan.add(method="drugbank_api", query=entities["drug"])
-        
+
         # Does this need research papers?
         if claim.needs_quantitative_evidence:
             plan.add(method="pubmed_api", query=build_pubmed_query(claim))
             plan.add(method="semantic_scholar", query=build_scholar_query(claim))
             plan.needs_full_text = True  # Will trigger deep search
-        
+
         # Does this need guideline check?
         if claim.asks_about_recommendation:
             plan.add(method="guideline_search", query=claim.text)
             plan.add(method="cochrane_api", query=claim.text)
-        
+
         # Does this need clinical trial results?
         if claim.mentions_trial_or_efficacy:
             plan.add(method="clinicaltrials_api", query=build_trial_query(claim))
-        
+
         plans.append(plan)
     return plans
 ```
@@ -404,6 +534,12 @@ def plan_retrieval(sub_claims: list, entities: dict) -> list[RetrievalPlan]:
 ---
 
 ## 5. What Gets Embedded vs What Doesn't
+
+> **Per-variant embedding usage:**
+> - **S1:** No embedding at all.
+> - **S2:** Static corpus embedding — this is the *only* system that embeds a full corpus (~5K–10K article chunks, persistent FAISS index).
+> - **S3/S4/S5:** No embedding — API discovery + cross-encoder reranking only.
+> - **S6:** Ephemeral deep search embedding (~200–500 chunks per claim, discarded after) + persistent guideline store (~18K chunks).
 
 ### Honest Breakdown
 
@@ -501,7 +637,8 @@ def deep_search(papers: list, sub_claim: str) -> list[Passage]:
 | **PUBHEALTH** | 11,832 | Public health news | True, False, Mixture, Unproven | [github.com/neemakot/Health-Fact-Checking](https://github.com/neemakot/Health-Fact-Checking) |
 | **HealthVer** | 14,330 | COVID health claims | Supports, Refutes, NEI | [github.com/sarrouti/HealthVer](https://github.com/sarrouti/HealthVer) |
 | **COVID-Fact** | 4,086 | COVID-specific | True, False | [github.com/asaakyan/covidfact](https://github.com/asaakyan/covidfact) |
-| **Total** | **31,657** | | | |
+| **ANTi-Vax** | ~300 | Vaccine misinformation | Misinformation type labels | [github.com/SakibShaworworking/ANTi-Vax](https://github.com/SakibShaworworking/ANTi-Vax) |
+| **Total** | **~32,000** | | | |
 
 #### Label Mapping: Benchmark Labels → Our Verdicts
 
@@ -532,15 +669,25 @@ Our system produces **9 nuanced verdicts** but benchmark datasets use coarser la
 
 The mapping utility lives in `src/evaluation/verdict_mapping.py`.
 
-#### Custom Claims (~200, Singapore Context)
+#### Evaluation Focus: Vaccine Misinformation
+
+The system is **general-purpose** (handles any health claim), but evaluation focuses on **vaccine misinformation** — a narrower domain with clearer ground truth, high societal impact, and strong benchmark availability. Vaccine claims are ideal for evaluation because:
+
+- **Clear scientific consensus** — makes ground truth annotation less subjective
+- **High stakes** — misinformation directly impacts public health outcomes
+- **Rich existing literature** — abundant systematic reviews and WHO guidelines to retrieve against
+- **Nuance-rich** — claims range from fully refuted ("vaccines cause autism") to overstated ("vaccines are 100% safe") to preliminary ("new vaccine prevents X")
+
+#### Custom Claims (~200, Vaccine-Focused)
 
 | Source | Examples |
 |--------|---------|
-| Singapore health news (CNA, ST) | "New study shows X prevents Y" |
-| Health influencers | Supplement claims, diet claims |
-| Traditional medicine | "TCM herb X treats condition Y" |
-| Product marketing | "Clinically proven to improve Z" |
-| MOH / HPB statements | Vaccination, screening claims |
+| Anti-vaccine social media | "Vaccines cause autism", "mRNA alters your DNA" |
+| Exaggerated safety claims | "Vaccines have zero side effects" |
+| Misrepresented studies | "Study proves COVID vaccine causes myocarditis in all recipients" |
+| Outdated or evolving guidance | "You don't need boosters", "Natural immunity is always better" |
+| Product marketing / alt-health | "This supplement replaces your flu shot" |
+| Singapore context (MOH, HPB) | "Singapore stopped using X vaccine", HPB immunization claims |
 
 #### Perturbation Augmentation
 
@@ -571,28 +718,73 @@ PERTURBATIONS:
 | **6. Verdict** | Was the final verdict correct? | Macro F1, per-class F1, calibration | Dataset labels |
 | **7. Agent Tool Selection** | Did each agent call the right tools in the right order? | Tool selection precision, tool coverage recall | Manual annotation of expected tool sequences |
 
-### 8.2 Baseline Comparison: Retrieval Strategy Study
+### 8.2 Comparison Thread 1: RAG Tiers
 
-This is the core contribution — comparing **retrieval strategies**, not just "RAG vs no-RAG":
+The first comparison thread evaluates **three tiers of retrieval sophistication** to answer: when does each level of retrieval complexity add value?
 
-| System | Retrieval Strategy | What It Tests |
-|--------|-------------------|---------------|
-| **B1: No retrieval** | LLM knowledge only | Is retrieval needed at all? |
-| **B2: API-only RAG** | PubMed API → abstracts → LLM | Is simple API-based retrieval enough? |
-| **B3: API + vector DB** | API discovery → embed all abstracts → cosine search → LLM | Does traditional vector RAG add value over API? |
-| **S4: Multi-method** | API → cross-encoder re-rank → targeted deep search → LLM | Does stage-by-stage retrieval help? |
-| **S5: Full pipeline** | Multi-method + VLM + Evidence Grader + Safety Checker | Does the full agent pipeline justify its complexity? |
+| Tier | System | Pipeline | Embedding? |
+|------|--------|----------|-----------|
+| **Simple RAG** | Embed vaccine articles → vector search → LLM verdict | Naive chunk-and-retrieve over a static corpus | Yes (static corpus) |
+| **Advanced RAG** | PICO query reformulation → Multi-source API (PubMed, Semantic Scholar, Cochrane) → Cross-encoder rerank → LLM verdict | Intelligent retrieval without agents | Minimal (reranker only) |
+| **Agentic RAG** | ReAct agent reasons about strategy → API discovery → rerank → deep search full-text → VLM figures → evidence grading → nuanced verdict | Agent-driven adaptive retrieval | Yes (ephemeral, targeted) |
+
+**What this shows:** Simple RAG may suffice for clear-cut claims ("vaccines cause autism" → refuted). Advanced RAG helps for multi-source claims needing cross-referencing. Agentic RAG shines for nuanced claims needing specific passages, figure data, or adaptive search strategies.
 
 ### Why This Comparison Is More Interesting Than Standard RAG Studies
 
 | Standard RAG Study | Our Study |
 |-------------------|-----------|
-| "Naive RAG vs Advanced RAG" | "When does API search suffice? When do you need embedding?" |
+| "Naive RAG vs Advanced RAG" | "When does API search suffice? When do you need embedding? When do agents add value?" |
 | Compares chunking strategies | Compares retrieval **methods** (API vs re-ranker vs embedding vs structured DB) |
 | Single retrieval method | Agent decides which method per sub-claim |
 | All evidence treated equally | Evidence hierarchy weights by study quality |
+| Fixed pipeline | Three distinct tiers with increasing autonomy |
 
-### 8.3 Ablation Studies
+### 8.3 Comparison Thread 2: Agent Architectures
+
+The second comparison thread implements the **same multi-agent pipeline** on multiple platforms to answer: does the agent framework matter?
+
+| Platform | License | Style | Pros | Cons |
+|----------|---------|-------|------|------|
+| **LangGraph** (current) | MIT | Structured state graph, typed state, conditional routing | Fine-grained control, explicit state, good observability | More boilerplate, steeper learning curve |
+| **CrewAI** | MIT | Role-based agents with delegation, sequential/hierarchical | Easy to set up, intuitive role metaphor, built-in memory | Less control over routing, opinionated |
+| **AutoGen** (Microsoft) | MIT | Multi-agent conversation, agents chat with each other | Good for debate/deliberation patterns, strong research backing | Conversation-heavy, harder to control flow |
+| **smolagents** (HuggingFace) | Apache 2.0 | Lightweight code-generating agents | Minimal overhead, code-first, model-agnostic | Newer, smaller community, less orchestration |
+| **PydanticAI** | MIT | Type-safe agents with dependency injection | Strong typing, clean API, good testing story | Newer, single-agent focused |
+| **Function Pipeline** (no framework) | N/A | Plain Python functions chained sequentially | Zero overhead, fully transparent, easy to debug | No agent reasoning, no adaptivity |
+
+The team picks **1-2 alternatives** alongside LangGraph. The **function pipeline** (plain Python, no agent framework) is included regardless as the "no-agent" baseline.
+
+**Comparison dimensions:**
+- **Accuracy** — Same claims, same retrieval tools, same LLM. Does the orchestration framework change verdict quality?
+- **Cost** — Token usage per claim (agent reasoning overhead varies by framework)
+- **Latency** — End-to-end time per claim
+- **Developer experience** — Lines of code, setup complexity, debugging ease, testability
+
+### 8.4 System Variants Summary
+
+The two comparison threads combine into **6 system variants** that systematically answer our research questions:
+
+| # | System | RAG Tier | Agent Architecture | Purpose |
+|---|--------|----------|-------------------|---------|
+| **S1** | No retrieval | None | None | LLM knowledge baseline |
+| **S2** | Simple RAG | Simple | None | Naive RAG baseline |
+| **S3** | Advanced RAG | Advanced | Function pipeline | Multi-source retrieval without agents |
+| **S4** | Multi-Agent (LangGraph) | Advanced | LangGraph | Agent orchestration value |
+| **S5** | Multi-Agent (Alt Platform) | Advanced | CrewAI / AutoGen / etc. | Platform comparison |
+| **S6** | Full Agentic RAG (LangGraph) | Agentic | LangGraph | Full system with deep search + VLM |
+
+**Research questions answered by pairwise comparison:**
+
+| Comparison | Question Answered |
+|-----------|-------------------|
+| S1 vs S2 | Does retrieval help at all? |
+| S2 vs S3 | Does advanced multi-source retrieval beat simple RAG? |
+| S3 vs S4 | Do agents add value over fixed pipelines (same retrieval)? |
+| S4 vs S5 | Does the agent platform matter? |
+| S4 vs S6 | Does agentic RAG (deep search, VLM) justify its cost? |
+
+### 8.5 Ablation Studies
 
 | Experiment | Hypothesis |
 |-----------|-----------|
@@ -607,7 +799,7 @@ This is the core contribution — comparing **retrieval strategies**, not just "
 | Agent (ReAct) vs Function nodes | Does agent-style reasoning improve grading/verdict quality over fixed pipelines? |
 | With/without agent tool selection | Letting agents choose tools vs hardcoded tool sequences — does flexibility help? |
 
-### 8.4 Unique Evaluation Contributions
+### 8.6 Unique Evaluation Contributions
 
 | Metric | What It Measures | Why It's Novel |
 |--------|-----------------|----------------|
@@ -619,6 +811,8 @@ This is the core contribution — comparing **retrieval strategies**, not just "
 | **API vs embedding efficiency** | When does embedding add value over API? | Practical question rarely studied |
 | **Agent tool selection accuracy** | Did each agent call the right tools for the claim type? | Generalizes retrieval planning eval across all agent nodes. Measures whether agents with reasoning loops make better tool choices than hardcoded sequences. Evaluated per-agent: e.g., did the Evidence Grader check for funding bias when the claim involves a pharmaceutical drug? |
 | **Agent vs function comparison** | Does ReAct reasoning improve output quality over fixed pipelines? | Directly measures the value of agent autonomy — compares identical tools with vs without a reasoning loop |
+| **Cross-platform agent comparison** | Does the agent framework affect verdict quality, cost, or latency? | Same pipeline on multiple platforms — isolates orchestration from reasoning |
+| **RAG tier cost-benefit analysis** | At what claim complexity does each RAG tier become worthwhile? | Maps retrieval sophistication to claim difficulty — practical guidance for system design |
 
 ---
 
@@ -634,7 +828,7 @@ This is the core contribution — comparing **retrieval strategies**, not just "
 | **Medical NER** | scispaCy (en_core_sci_lg) | Drug, condition, gene extraction |
 | **MeSH mapping** | pymedtermino | Map terms to controlled vocabulary for PubMed queries |
 | **APIs** | PubMed E-utilities, Semantic Scholar, ClinicalTrials.gov, DrugBank | Discovery-stage retrieval |
-| **Agent Framework** | LangGraph | State management, conditional routing |
+| **Agent Framework** | LangGraph + 1-2 alternatives (CrewAI/AutoGen/smolagents/PydanticAI) | State management, conditional routing; cross-platform comparison |
 | **Observability** | Langfuse | Trace per-agent cost, latency, retrieval method usage |
 | **UI** | Streamlit | Claim input + verdict display |
 
@@ -678,7 +872,8 @@ health-claim-checker/
 │   ├── benchmarks/
 │   │   ├── scifact/               # 1,409 claims
 │   │   ├── pubhealth/             # 11,832 claims
-│   │   └── healthver/             # 14,330 claims
+│   │   ├── healthver/             # 14,330 claims
+│   │   └── antivax/               # ~300 vaccine misinformation claims
 │   ├── claims/
 │   │   ├── curated_claims.json    # 200 custom claims
 │   │   ├── perturbed_claims.json  # Augmented variants
@@ -692,19 +887,13 @@ health-claim-checker/
 │       ├── kaplan_meier/
 │       └── ground_truth.json
 │
-├── src/
-│   ├── agents/
-│   │   ├── decomposer.py         # Claim → PICO + sub-claims
-│   │   ├── retrieval_planner.py  # Decide method per sub-claim
-│   │   ├── evidence_retriever.py # Orchestrate multi-method retrieval
-│   │   ├── vlm_extractor.py      # Medical figure extraction
-│   │   ├── evidence_grader.py    # Study quality + hierarchy
-│   │   ├── verdict_agent.py      # Evidence → nuanced verdict
-│   │   └── safety_checker.py     # Dangerous claim detection
+├── src/                              # SHARED LIBRARY — all variants import from here
+│   ├── config.py                 # Settings, API keys, model configs
+│   ├── models.py                 # Shared data models (PICO, SubClaim, Evidence, etc.)
 │   │
-│   ├── graph/
-│   │   ├── state.py              # LangGraph state definition
-│   │   └── workflow.py           # Agent orchestration graph
+│   ├── functions/                # Single-pass nodes (no reasoning loop)
+│   │   ├── decomposer.py        # Claim → PICO + sub-claims
+│   │   └── safety_checker.py    # Dangerous claim detection
 │   │
 │   ├── retrieval/
 │   │   ├── pubmed_client.py      # PubMed E-utilities wrapper
@@ -731,6 +920,17 @@ health-claim-checker/
 │       ├── verdict_eval.py
 │       └── safety_eval.py
 │
+├── systems/                      # VARIANT IMPLEMENTATIONS — symmetric, independent
+│   ├── README.md                 # Shared output contract
+│   ├── s1_no_retrieval/          # S1: LLM-only baseline
+│   ├── s2_simple_rag/            # S2: Static corpus + vector search
+│   ├── s3_advanced_rag/          # S3: Multi-source API + cross-encoder (function pipeline)
+│   ├── s4_langgraph/             # S4 + S6: LangGraph multi-agent (config-driven)
+│   │   ├── agents/               # ReAct agents
+│   │   ├── workflow.py           # LangGraph state graph
+│   │   └── system.py             # verify_claim() entry point
+│   └── s5_alt_platform/          # S5: Alternative agent framework
+│
 ├── app/
 │   └── streamlit_app.py
 │
@@ -753,27 +953,27 @@ health-claim-checker/
 
 ## 11. Workload Division (6 People)
 
-| Track | Member | Responsibilities |
-|-------|--------|-----------------|
-| **DATA & CLAIMS** | Member 1 | Download SciFact/PUBHEALTH/HealthVer. Curate 200 Singapore health claims. Create perturbation variants. Extract medical figures for VLM benchmark. Build ground truth annotations. |
-| **API RETRIEVAL** | Member 2 | PubMed E-utilities integration. Semantic Scholar API. ClinicalTrials.gov API. Cochrane search. DrugBank integration. Rate limiting, caching, error handling. |
-| **RANKING & DEEP SEARCH** | Member 3 | Cross-encoder re-ranker for abstracts. Evidence hierarchy scoring. On-the-fly full-text embedding with PubMedBERT. Pre-indexed guideline vector store. Trust-based ranking. |
-| **AGENTS & ORCHESTRATION** | Member 4 | LangGraph workflow. Claim Decomposer with PICO. Retrieval Planner agent. Orchestrator routing logic. State management. scispaCy NER + MeSH mapping. |
-| **VLM & VERDICT** | Member 5 | VLM Extractor for forest plots, Kaplan-Meier, bar charts. Evidence Grader (GRADE framework). Verdict Agent with 9-level taxonomy. Safety Checker. Streamlit UI. |
-| **EVALUATION** | Member 6 | Evaluation pipeline (6 layers). All 5 baseline implementations. Ablation study runner. Langfuse tracing. SciFact/PUBHEALTH benchmarks. Retrieval method comparison analysis. Results visualization. |
+| Role | Scope | Deliverables | Maps to Variant |
+|------|-------|-------------|-----------------|
+| **Data & Preprocessing** | Download benchmarks (SciFact, PUBHEALTH, HealthVer, ANTi-Vax). Curate ~200 vaccine claims from social media, news, alt-health sources. Create perturbation variants. Build ground truth annotations. Extract figures for VLM eval. | `data/` directory populated, ground truth JSON files, data loading utilities | All (shared data) |
+| **RAG: Simple + Advanced** | Build Simple RAG baseline (S2 — embed vaccine corpus, vector search, LLM verdict). Build Advanced RAG (S3 — multi-source API + cross-encoder rerank, no agents). PICO-guided query building. | Simple RAG system, Advanced RAG system, comparison notebook | S2, S3 |
+| **RAG: Agentic (Deep Search + Retrieval)** | Build ReAct evidence retriever agent. Build deep search (full-text embedding with PubMedBERT). Build guideline vector store. VLM figure extraction. | Evidence retriever, deep search module, guideline store, VLM extractor | S6 |
+| **Agents: LangGraph Pipeline** | Full multi-agent pipeline on LangGraph. Decomposer, Retrieval Planner, Evidence Grader, Verdict Agent, Safety Checker. State management, workflow graph. Streamlit UI. | Complete LangGraph pipeline (S4), Streamlit UI | S4 |
+| **Agents: Alternative Platform** | Same pipeline on team-chosen platform (CrewAI / AutoGen / etc.) + function pipeline baseline (S3). Ensure same inputs/outputs for fair comparison. | Alternative platform pipeline (S5), function baseline, comparison analysis | S3, S5 |
+| **Evaluation & Analysis** | Evaluation framework (7 layers). Run all 6 system variants on benchmarks. Ablation studies. RAG tier comparison. Agent platform comparison. LLM-as-judge for explanations. Results visualization. | Evaluation scripts, comparison tables, ablation results, final analysis | All (evaluation) |
 
-### Why This Split Works Better
+### Why This Split Works
 
-| Track | What They Learn | Portfolio Value |
-|-------|----------------|----------------|
-| DATA & CLAIMS | Benchmark curation, data augmentation | Data engineering |
-| API RETRIEVAL | External API integration, rate limiting | Backend / integration engineering |
-| RANKING & DEEP SEARCH | Re-ranking, embedding, hybrid retrieval | ML engineering / search |
-| AGENTS & ORCHESTRATION | LangGraph, multi-agent design, NER | AI engineering |
-| VLM & VERDICT | Vision models, classification, UX | ML + product |
-| EVALUATION | Benchmarking, ablation studies, analysis | Research / ML ops |
+| Role | What They Learn | Portfolio Value |
+|------|----------------|----------------|
+| Data & Preprocessing | Benchmark curation, vaccine misinformation taxonomy | Data engineering |
+| RAG: Simple + Advanced | Vector DB design, cross-encoder ranking, multi-source retrieval | ML engineering / search |
+| RAG: Agentic | Deep search, PubMedBERT, VLM integration, adaptive retrieval | ML engineering / research |
+| Agents: LangGraph | LangGraph, multi-agent orchestration, state management | AI engineering |
+| Agents: Alt Platform | Cross-platform comparison, framework evaluation | AI engineering / architecture |
+| Evaluation & Analysis | Benchmarking, ablation studies, statistical analysis | Research / ML ops |
 
-Each person works with a **different retrieval paradigm** — API, re-ranking, embedding, VLM — which makes the team's skill coverage much broader.
+Each person maps to a distinct system variant, and the two comparison threads (RAG tiers + agent platforms) are covered by dedicated roles.
 
 ---
 
@@ -781,11 +981,11 @@ Each person works with a **different retrieval paradigm** — API, re-ranking, e
 
 | Week | Milestone | Deliverables |
 |------|-----------|-------------|
-| **1-2** | **Data & APIs** | Benchmarks downloaded. PubMed, Semantic Scholar, ClinicalTrials.gov APIs working. Basic PICO extraction. 50 custom claims curated. Guideline corpus downloaded. |
-| **3-4** | **Core Pipeline** | Decomposer + Retrieval Planner + API retrieval + re-ranking working end-to-end. Guideline vector store built. Run on SciFact subset for early signal. |
-| **5-6** | **Advanced Features** | Full-text deep search. VLM figure extraction. Evidence Grader. Safety Checker. Full multi-method retrieval. Streamlit UI. |
-| **7** | **Evaluation** | All 5 baselines run. Ablation studies. SciFact + PUBHEALTH benchmarks. Custom claim evaluation. Retrieval method comparison. |
-| **8** | **Polish** | Report writing. Demo prep. Code cleanup. Reproducibility check. Results visualization. |
+| **1-2** | **Data & APIs** | Benchmarks downloaded (incl. ANTi-Vax). PubMed, Semantic Scholar, ClinicalTrials.gov APIs working. Basic PICO extraction. ~100 vaccine claims curated. Guideline corpus downloaded. |
+| **3-4** | **Core Pipeline + RAG Baselines** | LangGraph pipeline end-to-end (S4). Guideline vector store built. Simple RAG baseline (S2). Run on SciFact subset for early signal. |
+| **5-6** | **Advanced Systems** | Advanced RAG + function pipeline (S3). Deep search + VLM (S6). Alternative platform implementation (S5). No-retrieval baseline (S1). Streamlit UI. |
+| **7** | **Evaluation** | All 6 system variants run on benchmarks. Ablation studies. RAG tier comparison. Agent platform comparison. LLM-as-judge evaluation. |
+| **8** | **Polish** | Report writing. Demo prep. Code cleanup. Reproducibility check. Results visualization. Cross-platform analysis. |
 
 ---
 
@@ -807,22 +1007,24 @@ Each person works with a **different retrieval paradigm** — API, re-ranking, e
 
 | Requirement | How Met |
 |-------------|---------|
-| **Real-world problem** | ✅ Health misinformation — WHO-recognized global threat |
-| **Substantial GenAI** | ✅ 7 agents + multi-method retrieval + VLM + medical NER |
-| **Quantitative metrics** | ✅ Macro F1, Recall@k, VLM accuracy, calibration, safety recall |
-| **Compare 2+ alternatives** | ✅ 5 retrieval strategies compared + 8 ablation studies |
-| **Reflective analysis** | ✅ "When does API search suffice vs when do you need embedding?" |
+| **Real-world problem** | ✅ Vaccine misinformation — WHO-recognized global threat with direct public health impact |
+| **Substantial GenAI** | ✅ 7 agents + multi-method retrieval + VLM + medical NER, implemented across multiple platforms |
+| **Quantitative metrics** | ✅ Macro F1, Recall@k, VLM accuracy, calibration, safety recall, cost, latency |
+| **Compare 2+ alternatives** | ✅ 3 RAG tiers compared + 2+ agent platforms compared = 6 system variants + ablation studies |
+| **Reflective analysis** | ✅ Two research threads: "When does each RAG tier add value?" + "Does the agent platform matter?" |
 | **Risks & mitigations** | ✅ 7 risks with specific guardrails + safety-first design |
-| **Reproducibility** | ✅ Public benchmarks (30K+ claims), free APIs, evaluation scripts |
+| **Reproducibility** | ✅ Public benchmarks (32K+ claims), free APIs, evaluation scripts |
 
-### Core Research Question
+### Core Research Questions
 
-> **"For multi-source health claim verification, when does API-based retrieval suffice, when do you need dense retrieval, and how should an agent decide between them?"**
+> **Thread 1 (RAG):** "For health claim verification, when does simple RAG suffice, when does advanced multi-source retrieval help, and when does agentic RAG justify its complexity?"
+>
+> **Thread 2 (Agents):** "Does the agent orchestration framework matter? Given the same tools, retrieval methods, and LLM, do different agent platforms produce different results?"
 
-This is a more nuanced and interesting question than "does RAG help?" — and the 5-system comparison directly answers it.
+These are more nuanced questions than "does RAG help?" — and the 6-system comparison directly answers them through controlled pairwise comparisons (S1 vs S2, S2 vs S3, S3 vs S4, S4 vs S5, S4 vs S6).
 
 ---
 
 ## 15. The Elevator Pitch (30 seconds)
 
-> "Health misinformation kills people. Our system takes any health claim — 'Intermittent fasting reverses diabetes', 'Vitamin D prevents COVID' — and verifies it using a multi-agent pipeline. Unlike traditional RAG systems that embed everything into a vector database, our agents intelligently choose the right retrieval method per claim: PubMed API for paper discovery, cross-encoder re-ranking for relevance, targeted embedding only for deep within-paper search, and vision models to extract data from medical figures like forest plots and survival curves. We evaluate on 30,000+ existing benchmark claims and compare five retrieval strategies to answer: when does API search suffice, and when do you actually need embedding? The system produces nuanced verdicts — not just true or false, but 'supported', 'overstated', 'preliminary', or 'dangerous' — with full citations and plain-language explanation."
+> "Vaccine misinformation is a global health crisis. Our system takes any health claim and verifies it against peer-reviewed research using multi-agent AI. We compare three tiers of RAG — simple vector search, advanced multi-source retrieval, and fully agentic RAG where agents reason about which retrieval method to use per claim. We also compare agent platforms — implementing the same pipeline on LangGraph, an alternative framework, and a plain-Python baseline — to measure whether orchestration frameworks actually matter. Evaluated on 32,000+ benchmark claims with a focus on vaccine misinformation, we answer two questions: when does each level of retrieval sophistication add value, and does the agent platform affect results? The system produces nuanced verdicts — not just true or false, but 'supported', 'overstated', 'preliminary', or 'dangerous' — with full citations and plain-language explanation."

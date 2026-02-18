@@ -29,7 +29,7 @@ Output (to state):
   classifications, and overall evidence strength per sub-claim
 """
 
-from src.graph.state import FactCheckState
+from src.models import FactCheckState
 
 
 async def run_evidence_grader(state: FactCheckState) -> FactCheckState:

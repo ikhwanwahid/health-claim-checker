@@ -6,6 +6,12 @@ Multi-agent system for verifying health claims against peer-reviewed research, c
 
 **Core insight:** RAG ≠ Vector Database. We use API search, cross-encoder re-ranking, targeted embedding, and VLM — picking the right method for each query.
 
+**Two comparison threads:**
+1. **RAG Tiers** — Simple RAG vs Advanced RAG vs Agentic RAG (when does each tier add value?)
+2. **Agent Architectures** — Same pipeline on LangGraph vs alternative platform vs function pipeline (does the framework matter?)
+
+System is general-purpose; **evaluation focuses on vaccine misinformation** (clearer ground truth, high-impact domain).
+
 ## Quick Start
 
 ```bash
@@ -61,6 +67,39 @@ Claim → Decomposer → Retrieval Planner → Evidence Retriever → VLM Extrac
 
 **Embedding is used in 1 of 5 stages, over small corpora.**
 
+## Comparison Framework
+
+### Thread 1: RAG Tiers
+
+| Tier | System | What It Does | Embedding? |
+|------|--------|-------------|-----------|
+| **Simple RAG** | Embed vaccine articles → vector search → LLM verdict | Naive chunk-and-retrieve | Yes (static corpus) |
+| **Advanced RAG** | PICO query reformulation → Multi-source API → Cross-encoder rerank → LLM verdict | Intelligent retrieval without agents | Minimal (reranker only) |
+| **Agentic RAG** | ReAct agent → API discovery → rerank → deep search → VLM → grading → verdict | Agent-driven adaptive retrieval | Yes (ephemeral, targeted) |
+
+### Thread 2: Agent Architectures
+
+Same pipeline implemented on multiple platforms. Team picks 1-2 alternatives alongside LangGraph; function pipeline included as no-agent baseline.
+
+| Platform | Style |
+|----------|-------|
+| **LangGraph** (current) | Structured state graph, typed state, conditional routing |
+| **CrewAI / AutoGen / smolagents / PydanticAI** | Team picks 1-2 alternatives |
+| **Function Pipeline** (baseline) | Plain Python functions, no agent reasoning |
+
+### 6 System Variants
+
+| # | System | RAG Tier | Agent Arch | Purpose |
+|---|--------|----------|-----------|---------|
+| S1 | No retrieval | None | None | LLM knowledge baseline |
+| S2 | Simple RAG | Simple | None | Naive RAG baseline |
+| S3 | Advanced RAG | Advanced | Function pipeline | Multi-source retrieval without agents |
+| S4 | Multi-Agent (LangGraph) | Advanced | LangGraph | Agent orchestration value |
+| S5 | Multi-Agent (Alt Platform) | Advanced | Alt framework | Platform comparison |
+| S6 | Full Agentic RAG | Agentic | LangGraph | Full system with deep search + VLM |
+
+**Key comparisons:** S1→S2 (retrieval value), S2→S3 (advanced retrieval value), S3→S4 (agent value), S4→S5 (platform comparison), S4→S6 (agentic RAG value).
+
 ## Directory Structure
 
 ```
@@ -73,15 +112,16 @@ health-claim-checker/
 ├── .env.example              # API keys template
 │
 ├── data/
-│   ├── benchmarks/           # SciFact, PUBHEALTH, HealthVer (downloaded)
+│   ├── benchmarks/           # SciFact, PUBHEALTH, HealthVer, ANTi-Vax (downloaded)
 │   │   ├── scifact/
 │   │   ├── pubhealth/
-│   │   └── healthver/
+│   │   ├── healthver/
+│   │   └── antivax/
 │   ├── claims/
-│   │   ├── curated_claims.json
+│   │   ├── curated_claims.json       # ~200 vaccine-focused claims
 │   │   ├── perturbed_claims.json
 │   │   ├── ground_truth.json
-│   │   └── pico_ground_truth.json  # 30 hand-labeled claims for PICO eval
+│   │   └── pico_ground_truth.json    # 30 hand-labeled claims for PICO eval
 │   ├── guidelines/           # Pre-downloaded PDFs
 │   │   ├── who/
 │   │   ├── nih/
@@ -91,45 +131,33 @@ health-claim-checker/
 │       ├── kaplan_meier/
 │       └── ground_truth.json
 │
-├── src/
+├── src/                          # SHARED LIBRARY — all variants import from here
 │   ├── __init__.py
-│   ├── config.py             # Settings, API keys, model configs
+│   ├── config.py                 # Settings, API keys, model configs
+│   ├── models.py                 # Shared data models (PICO, SubClaim, Evidence, etc.)
 │   │
-│   ├── agents/               # ReAct agents (LLM + tools + reasoning loop)
+│   ├── functions/                # Single-pass nodes (no reasoning loop)
 │   │   ├── __init__.py
-│   │   ├── retrieval_planner.py  # Decide method per sub-claim
-│   │   ├── evidence_retriever.py # Orchestrate multi-method
-│   │   ├── vlm_extractor.py  # Medical figure extraction
-│   │   ├── evidence_grader.py    # Study quality + hierarchy
-│   │   └── verdict_agent.py  # Evidence → nuanced verdict
-│   │
-│   ├── functions/            # Single-pass nodes (no reasoning loop)
-│   │   ├── __init__.py
-│   │   ├── decomposer.py     # Claim → PICO + sub-claims
-│   │   └── safety_checker.py # Dangerous claim detection
-│   │
-│   ├── graph/
-│   │   ├── __init__.py
-│   │   ├── state.py          # LangGraph state definition
-│   │   └── workflow.py       # Agent orchestration graph
+│   │   ├── decomposer.py        # Claim → PICO + sub-claims
+│   │   └── safety_checker.py    # Dangerous claim detection
 │   │
 │   ├── retrieval/
 │   │   ├── __init__.py
-│   │   ├── pubmed_client.py      # PubMed E-utilities wrapper
-│   │   ├── semantic_scholar.py   # Semantic Scholar API
-│   │   ├── cochrane_client.py    # Cochrane search
-│   │   ├── clinical_trials.py    # ClinicalTrials.gov API
-│   │   ├── drugbank_client.py    # Drug info API
-│   │   ├── cross_encoder.py      # Abstract re-ranking
-│   │   ├── deep_search.py        # On-the-fly full-text embedding
-│   │   ├── guideline_store.py    # Pre-indexed guideline vector DB
-│   │   └── trust_ranker.py       # Evidence hierarchy scoring
+│   │   ├── pubmed_client.py     # PubMed E-utilities wrapper
+│   │   ├── semantic_scholar.py  # Semantic Scholar API
+│   │   ├── cochrane_client.py   # Cochrane search
+│   │   ├── clinical_trials.py   # ClinicalTrials.gov API
+│   │   ├── drugbank_client.py   # Drug info API
+│   │   ├── cross_encoder.py     # Abstract re-ranking
+│   │   ├── deep_search.py       # On-the-fly full-text embedding
+│   │   ├── guideline_store.py   # Pre-indexed guideline vector DB
+│   │   └── trust_ranker.py      # Evidence hierarchy scoring
 │   │
 │   ├── medical_nlp/
 │   │   ├── __init__.py
-│   │   ├── pico_extractor.py     # PICO element extraction (hallucination fix applied)
-│   │   ├── medical_ner.py        # Drug, condition, gene NER
-│   │   └── mesh_mapper.py        # Map to MeSH vocabulary
+│   │   ├── pico_extractor.py    # PICO element extraction (hallucination fix applied)
+│   │   ├── medical_ner.py       # Drug, condition, gene NER
+│   │   └── mesh_mapper.py       # Map to MeSH vocabulary
 │   │
 │   └── evaluation/
 │       ├── __init__.py
@@ -141,6 +169,27 @@ health-claim-checker/
 │       ├── verdict_eval.py
 │       ├── safety_eval.py
 │       └── tool_selection_eval.py  # Agent tool selection accuracy
+│
+├── systems/                      # VARIANT IMPLEMENTATIONS — symmetric, independent
+│   ├── __init__.py
+│   ├── README.md                 # Shared output contract
+│   ├── s1_no_retrieval/          # S1: LLM-only baseline
+│   │   ├── __init__.py
+│   │   └── system.py
+│   ├── s2_simple_rag/            # S2: Static corpus + vector search
+│   │   ├── __init__.py
+│   │   └── system.py
+│   ├── s3_advanced_rag/          # S3: Multi-source API + cross-encoder (function pipeline)
+│   │   ├── __init__.py
+│   │   └── system.py
+│   ├── s4_langgraph/             # S4 + S6: LangGraph multi-agent (config-driven)
+│   │   ├── __init__.py
+│   │   ├── agents/               # ReAct agents (retrieval_planner, evidence_retriever, etc.)
+│   │   ├── workflow.py           # LangGraph state graph
+│   │   └── system.py             # verify_claim() entry point
+│   └── s5_alt_platform/          # S5: Alternative agent framework
+│       ├── __init__.py
+│       └── system.py
 │
 ├── app/
 │   └── streamlit_app.py      # Multi-tab demo UI
@@ -245,7 +294,7 @@ uv run pytest tests/test_agents/test_decomposer.py -v
 uv run streamlit run app/streamlit_app.py
 
 # Run on specific claim
-uv run python -m src.graph.workflow "Intermittent fasting reverses diabetes"
+uv run python -m systems.s4_langgraph.system "Intermittent fasting reverses diabetes"
 
 # Run baseline comparison
 uv run python scripts/run_baselines.py --claim "Vitamin D prevents COVID"
@@ -256,11 +305,11 @@ uv run python scripts/run_evaluation.py --dataset scifact --systems all
 
 ## Current Sprint Focus
 
-1. **Week 1-2:** Set up project structure, API clients, basic PICO extraction
-2. **Week 3-4:** Core pipeline end-to-end, guideline indexing
-3. **Week 5-6:** VLM, Evidence Grader, Streamlit UI
-4. **Week 7:** Evaluation, baselines, ablations
-5. **Week 8:** Polish, report, demo prep
+1. **Week 1-2:** Project structure, API clients, basic PICO extraction, vaccine claims curation
+2. **Week 3-4:** Core LangGraph pipeline end-to-end, guideline indexing, Simple RAG baseline (S2)
+3. **Week 5-6:** Advanced RAG (S3), VLM + deep search (S6), alternative platform implementation (S5), Streamlit UI
+4. **Week 7:** Run all 6 system variants on benchmarks, ablation studies, RAG tier comparison, agent platform comparison
+5. **Week 8:** Results analysis, report writing, demo prep
 
 ## Code Style
 
@@ -274,16 +323,16 @@ uv run python scripts/run_evaluation.py --dataset scifact --systems all
 ## Example Usage
 
 ```python
-from src.graph.workflow import verify_claim
+from systems.s4_langgraph.system import verify_claim
 
 result = verify_claim("Intermittent fasting reverses Type 2 diabetes")
 
-print(result.verdict)           # "OVERSTATED"
-print(result.confidence)        # 0.78
-print(result.explanation)       # "While IF shows promise..."
-print(result.sub_claims)        # List of sub-claim verdicts
-print(result.evidence)          # Retrieved evidence with sources
-print(result.agent_trace)       # Execution trace for UI
+print(result["verdict"])           # "OVERSTATED"
+print(result["confidence"])        # 0.78
+print(result["explanation"])       # "While IF shows promise..."
+print(result["sub_claims"])        # List of sub-claim verdicts
+print(result["evidence"])          # Retrieved evidence with sources
+print(result["agent_trace"])       # Execution trace for UI
 ```
 
 ## Retrieval Planner Logic
@@ -322,29 +371,22 @@ def plan_retrieval(sub_claim: SubClaim, entities: Entities) -> RetrievalPlan:
 3. Update `retrieval_planner.py` to use it
 4. Add tests
 
-### Add a new agent
-1. Create in `src/agents/new_agent.py`
-2. Add to `src/graph/state.py` state definition
-3. Add node in `src/graph/workflow.py`
+### Add a new agent (S4/S6)
+1. Create in `systems/s4_langgraph/agents/new_agent.py`
+2. Update data models in `src/models.py` if needed
+3. Add node in `systems/s4_langgraph/workflow.py`
 4. Add evaluation in `src/evaluation/`
 
 ### Run on a single claim (debugging)
 ```python
-from src.graph.workflow import verify_claim, VerifyConfig
+from systems.s4_langgraph.system import verify_claim
 
-result = verify_claim(
-    "Vitamin D prevents COVID",
-    config=VerifyConfig(
-        verbose=True,
-        enable_vlm=False,  # Skip VLM for speed
-        max_papers=5,
-    )
-)
+result = await verify_claim("Vitamin D prevents COVID")
 ```
 
 ## Links
 
-- [Full Proposal PDF](./docs/Health_Claims_FactChecker_Proposal.pdf)
+- [Full Proposal (v2)](./docs/Health_Claims_FactChecker_Proposal_v2.md)
 - [SciFact Dataset](https://github.com/allenai/scifact)
 - [PUBHEALTH Dataset](https://github.com/neemakot/Health-Fact-Checking)
 - [PubMed E-utilities Docs](https://www.ncbi.nlm.nih.gov/books/NBK25501/)

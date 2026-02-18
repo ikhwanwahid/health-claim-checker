@@ -27,7 +27,7 @@ Output (to state):
 - evidence: list of Evidence objects with source, content, quality_score
 """
 
-from src.graph.state import FactCheckState
+from src.models import FactCheckState
 
 
 async def run_evidence_retriever(state: FactCheckState) -> FactCheckState:
