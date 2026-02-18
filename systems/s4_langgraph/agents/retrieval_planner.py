@@ -36,7 +36,7 @@ from typing import Any
 import anthropic
 
 from src.config import ANTHROPIC_API_KEY, CLAUDE_MODEL, GUIDELINES_DIR
-from src.graph.state import AgentTrace, FactCheckState, ToolCall
+from src.models import AgentTrace, FactCheckState, ToolCall
 
 logger = logging.getLogger(__name__)
 

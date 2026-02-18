@@ -5,6 +5,7 @@ from src.retrieval.semantic_scholar import S2Paper, search as s2_search
 from src.retrieval.cochrane_client import CochraneReview, search_cochrane
 from src.retrieval.clinical_trials import ClinicalTrial, search as ct_search
 from src.retrieval.drugbank_client import DrugInfo, DrugInteraction, search_drug_label, get_interactions
+from src.retrieval.cross_encoder import RankedResult, rerank, rerank_papers
 
 __all__ = [
     "PubMedArticle",
@@ -19,4 +20,7 @@ __all__ = [
     "DrugInteraction",
     "search_drug_label",
     "get_interactions",
+    "RankedResult",
+    "rerank",
+    "rerank_papers",
 ]

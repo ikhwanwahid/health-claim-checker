@@ -12,7 +12,7 @@ from typing import Optional
 import anthropic
 
 from src.config import ANTHROPIC_API_KEY, CLAUDE_MODEL
-from src.graph.state import PICO
+from src.models import PICO
 from src.medical_nlp.medical_ner import MedicalEntities, extract_entities
 
 logger = logging.getLogger(__name__)

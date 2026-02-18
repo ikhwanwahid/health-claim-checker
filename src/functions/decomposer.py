@@ -19,7 +19,7 @@ from typing import Optional
 import anthropic
 
 from src.config import ANTHROPIC_API_KEY, CLAUDE_MODEL
-from src.graph.state import AgentTrace, FactCheckState, PICO, SubClaim
+from src.models import AgentTrace, FactCheckState, PICO, SubClaim
 from src.medical_nlp.medical_ner import extract_entities, MedicalEntities
 from src.medical_nlp.pico_extractor import extract_pico
 

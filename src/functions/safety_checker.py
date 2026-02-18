@@ -27,7 +27,7 @@ Output (to state):
 - is_dangerous: bool, True if any safety flags are critical
 """
 
-from src.graph.state import FactCheckState
+from src.models import FactCheckState
 
 
 async def run_safety_checker(state: FactCheckState) -> FactCheckState:

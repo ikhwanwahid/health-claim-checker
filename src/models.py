@@ -1,4 +1,8 @@
-"""LangGraph state definitions for the fact-checking pipeline."""
+"""Shared data models for the health claim verification pipeline.
+
+Pure Pydantic models and TypedDict state — no framework dependency.
+All system variants (S1–S6) import from here.
+"""
 
 from typing import TypedDict, List, Optional, Literal
 from pydantic import BaseModel
@@ -59,36 +63,36 @@ class AgentTrace(BaseModel):
 
 
 class FactCheckState(TypedDict):
-    """Main state passed through the LangGraph workflow."""
+    """Main state passed through the verification pipeline."""
     # Input
     claim: str
-    
+
     # Decomposition
     pico: Optional[PICO]
     sub_claims: List[SubClaim]
     entities: dict
-    
+
     # Retrieval planning
     retrieval_plan: dict
-    
+
     # Evidence
     evidence: List[Evidence]
-    
+
     # VLM
     extracted_figures: List[dict]
-    
+
     # Grading
     evidence_quality: dict
-    
+
     # Verdict
     verdict: str
     confidence: float
     explanation: str
-    
+
     # Safety
     safety_flags: List[str]
     is_dangerous: bool
-    
+
     # Tracing
     agent_trace: List[AgentTrace]
     total_cost_usd: float

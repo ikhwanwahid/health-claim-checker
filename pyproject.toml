@@ -33,7 +33,7 @@ dependencies = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src"]
+packages = ["src", "systems"]
 
 [build-system]
 requires = ["hatchling"]
