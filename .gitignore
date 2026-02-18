@@ -22,6 +22,9 @@ data/benchmarks/*
 data/guidelines/*
 !data/guidelines/.gitkeep
 
+# Internal docs (living docs, not committed)
+docs/internal/
+
 # Notebooks
 .ipynb_checkpoints/
 
